@@ -10,6 +10,12 @@ import (
 	"strings"
 )
 
+type ClonerError struct{}
+
+func (err *ClonerError) Error() {
+	err.Error()
+}
+
 // Clones the directory at scrPath to dstPath.
 func Clone(srcPath, dstPath string) {
 	err := filepath.Walk(srcPath, func(path string, info os.FileInfo, err error) error {
