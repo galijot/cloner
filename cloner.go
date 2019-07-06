@@ -9,10 +9,19 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/galijot/cloner/flogger"
 )
 
-// Clones the directory at scrPath to dstPath.
-func Clone(srcPath, dstPath string) error {
+type CloneOptions interface {
+	IncludeHidden() bool
+}
+
+/*
+Clones the directory at scrPath to dstPath using provided options,
+& writes the cloned results into 'cloner.txt' file in the root of the srcPath.
+*/
+func Clone(srcPath, dstPath string, options CloneOptions) error {
 
 	if srcPath == "" {
 		return errors.New("Can't clone from empty source path")
@@ -30,7 +39,14 @@ func Clone(srcPath, dstPath string) error {
 		return errors.New("Destination path does not exist")
 	}
 
+	logFile := "cloner.txt"
+	logFilePath := pathByAppendingPath(srcPath, logFile)
+
 	return filepath.Walk(srcPath, func(path string, info os.FileInfo, err error) error {
+
+		if !options.IncludeHidden() && isFileHidden(info) {
+			return nil
+		}
 
 		// path of the item without `srcPath`
 		internalPath := strings.Replace(path, srcPath, "", -1)
@@ -45,9 +61,23 @@ func Clone(srcPath, dstPath string) error {
 
 		if !fileExistsAtPath(dstItemPath) {
 			if info.IsDir() {
-				return copyDir(srcItemPath, dstItemPath)
+				err := copyDir(srcItemPath, dstItemPath)
+
+				if err == nil {
+					log := fmt.Sprintf("🗂 Cloned folder %v to %v", info.Name(), dstItemPath)
+					flogger.LogToFile(log, logFilePath)
+				} else {
+					return err
+				}
 			} else {
-				return copyFile(srcItemPath, dstItemPath)
+				err := copyFile(srcItemPath, dstItemPath)
+
+				if err == nil {
+					log := fmt.Sprintf("📄 Cloned item %v to %v\n", info.Name(), dstItemPath)
+					flogger.LogToFile(log, logFilePath)
+				} else {
+					return err
+				}
 			}
 		}
 
@@ -79,6 +109,14 @@ func pathByAppendingPath(p1, p2 string) string {
 	}
 
 	return p1 + p2
+}
+
+/*
+Checks if the provided file is hidden.
+Currently only works for unix systems, where hidden files begins with "."
+*/
+func isFileHidden(file os.FileInfo) bool {
+	return strings.HasPrefix(file.Name(), ".")
 }
 
 /* COPYING */
