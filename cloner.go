@@ -1,6 +1,7 @@
 package cloner
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -10,15 +11,26 @@ import (
 	"strings"
 )
 
-type ClonerError struct{}
-
-func (err *ClonerError) Error() {
-	err.Error()
-}
-
 // Clones the directory at scrPath to dstPath.
-func Clone(srcPath, dstPath string) {
-	err := filepath.Walk(srcPath, func(path string, info os.FileInfo, err error) error {
+func Clone(srcPath, dstPath string) error {
+
+	if srcPath == "" {
+		return errors.New("Can't clone from empty source path")
+	}
+
+	if dstPath == "" {
+		return errors.New("Can't clone to empty destination path")
+	}
+
+	if !fileExistsAtPath(srcPath) {
+		return errors.New("Source path does not exist")
+	}
+
+	if !fileExistsAtPath(dstPath) {
+		return errors.New("Destination path does not exist")
+	}
+
+	return filepath.Walk(srcPath, func(path string, info os.FileInfo, err error) error {
 
 		// path of the item without `srcPath`
 		internalPath := strings.Replace(path, srcPath, "", -1)
@@ -41,10 +53,6 @@ func Clone(srcPath, dstPath string) {
 
 		return nil
 	})
-
-	if err != nil {
-		fmt.Println(err)
-	}
 }
 
 /* Returns boolean indicating whether a file exists at provided path. */
