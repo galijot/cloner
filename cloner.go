@@ -3,13 +3,11 @@ package cloner
 import (
 	"errors"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
+	"github.com/galijot/cloner/cper"
 	"github.com/galijot/cloner/flogger"
 )
 
@@ -23,27 +21,20 @@ Clones the directory at scrPath to dstPath using provided options,
 */
 func Clone(srcPath, dstPath string, options CloneOptions) error {
 
-	if srcPath == "" {
-		return errors.New("Can't clone from empty source path")
-	}
-
-	if dstPath == "" {
-		return errors.New("Can't clone to empty destination path")
-	}
-
-	if !fileExistsAtPath(srcPath) {
-		return errors.New("Source path does not exist")
-	}
-
-	if !fileExistsAtPath(dstPath) {
-		return errors.New("Destination path does not exist")
+	err := validatePaths(srcPath, dstPath)
+	if err != nil {
+		return err
 	}
 
 	logFile := "cloner.txt"
-	logFilePath := pathByAppendingPath(srcPath, logFile)
+	flogger.PrepareOnPath(filepath.Join(srcPath, logFile))
+	defer flogger.Resign()
 
 	return filepath.Walk(srcPath, func(path string, info os.FileInfo, err error) error {
 
+		if err != nil {
+			return err
+		}
 		if !options.IncludeHidden() && isFileHidden(info) {
 			return nil
 		}
@@ -56,33 +47,52 @@ func Clone(srcPath, dstPath string, options CloneOptions) error {
 			return nil
 		}
 
-		srcItemPath := pathByAppendingPath(srcPath, internalPath)
-		dstItemPath := pathByAppendingPath(dstPath, internalPath)
+		dstItemPath := filepath.Join(dstPath, internalPath)
+		if fileExistsAtPath(dstItemPath) {
+			return nil
+		}
 
-		if !fileExistsAtPath(dstItemPath) {
-			if info.IsDir() {
-				err := copyDir(srcItemPath, dstItemPath)
+		srcItemPath := filepath.Join(srcPath, internalPath)
 
-				if err == nil {
-					log := fmt.Sprintf("🗂 Cloned folder %v to %v", info.Name(), dstItemPath)
-					flogger.LogToFile(log, logFilePath)
-				} else {
-					return err
-				}
-			} else {
-				err := copyFile(srcItemPath, dstItemPath)
+		if info.IsDir() {
+			err = cper.Dir(srcItemPath, dstItemPath)
 
-				if err == nil {
-					log := fmt.Sprintf("📄 Cloned item %v to %v\n", info.Name(), dstItemPath)
-					flogger.LogToFile(log, logFilePath)
-				} else {
-					return err
-				}
+			if err == nil {
+				log := fmt.Sprintf("🗂 Cloned folder %v to %v", info.Name(), dstItemPath)
+				err = flogger.Log(log)
+			}
+		} else {
+			err = cper.File(srcItemPath, dstItemPath)
+
+			if err == nil {
+				log := fmt.Sprintf("📄 Cloned item %v to %v\n", info.Name(), dstItemPath)
+				err = flogger.Log(log)
 			}
 		}
 
-		return nil
+		return err
 	})
+}
+
+// checks if paths are valid, and if they're not returns an error describing the issue.
+func validatePaths(src, dst string) error {
+	if src == "" {
+		return errors.New("Can't clone from empty source path")
+	}
+
+	if dst == "" {
+		return errors.New("Can't clone to empty destination path")
+	}
+
+	if !fileExistsAtPath(src) {
+		return errors.New("Source path does not exist")
+	}
+
+	if !fileExistsAtPath(dst) {
+		return errors.New("Destination path does not exist")
+	}
+
+	return nil
 }
 
 /* Returns boolean indicating whether a file exists at provided path. */
@@ -94,89 +104,9 @@ func fileExistsAtPath(path string) bool {
 }
 
 /*
-Appens string p2 to string p1, while appending `/` to end of p1 (if isn't already),
-and removing `/` from start of p2 (if exists).
-*/
-func pathByAppendingPath(p1, p2 string) string {
-	pathDelimiter := "/"
-
-	if !strings.HasSuffix(p1, pathDelimiter) {
-		p1 = p1 + pathDelimiter
-	}
-
-	if strings.HasPrefix(p2, pathDelimiter) {
-		strings.TrimPrefix(p2, pathDelimiter)
-	}
-
-	return p1 + p2
-}
-
-/*
 Checks if the provided file is hidden.
 Currently only works for unix systems, where hidden files begins with "."
 */
 func isFileHidden(file os.FileInfo) bool {
 	return strings.HasPrefix(file.Name(), ".")
-}
-
-/* COPYING */
-
-// copyDir copies a whole directory recursively
-func copyDir(src string, dst string) error {
-	var err error
-	var fds []os.FileInfo
-	var srcInfo os.FileInfo
-
-	if srcInfo, err = os.Stat(src); err != nil {
-		return err
-	}
-
-	if err = os.MkdirAll(dst, srcInfo.Mode()); err != nil {
-		return err
-	}
-
-	if fds, err = ioutil.ReadDir(src); err != nil {
-		return err
-	}
-	for _, fd := range fds {
-		srcfp := path.Join(src, fd.Name())
-		dstfp := path.Join(dst, fd.Name())
-
-		if fd.IsDir() {
-			if err = copyDir(srcfp, dstfp); err != nil {
-				fmt.Println(err)
-			}
-		} else {
-			if err = copyFile(srcfp, dstfp); err != nil {
-				fmt.Println(err)
-			}
-		}
-	}
-	return nil
-}
-
-// copyFile copies a single file from src to dst
-func copyFile(src, dst string) error {
-	var err error
-	var srcfd *os.File
-	var dstfd *os.File
-	var srcInfo os.FileInfo
-
-	if srcfd, err = os.Open(src); err != nil {
-		return err
-	}
-	defer srcfd.Close()
-
-	if dstfd, err = os.Create(dst); err != nil {
-		return err
-	}
-	defer dstfd.Close()
-
-	if _, err = io.Copy(dstfd, srcfd); err != nil {
-		return err
-	}
-	if srcInfo, err = os.Stat(src); err != nil {
-		return err
-	}
-	return os.Chmod(dst, srcInfo.Mode())
 }
