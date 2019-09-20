@@ -33,7 +33,7 @@ func Clone(srcPath, dstPath string, options CloneOptions) error {
 	return filepath.Walk(srcPath, func(path string, info os.FileInfo, err error) error {
 
 		if err != nil {
-			return err
+			return filepath.SkipDir
 		}
 		if !options.IncludeHidden() && isFileHidden(info) {
 			return nil
@@ -77,22 +77,38 @@ func Clone(srcPath, dstPath string, options CloneOptions) error {
 // checks if paths are valid, and if they're not returns an error describing the issue.
 func validatePaths(src, dst string) error {
 	if src == "" {
-		return errors.New("Can't clone from empty source path")
+		return errors.New("Can't clone from empty source path.")
 	}
 
 	if dst == "" {
-		return errors.New("Can't clone to empty destination path")
+		return errors.New("Can't clone to empty destination path.")
 	}
 
 	if !fileExistsAtPath(src) {
-		return errors.New("Source path does not exist")
+		return errors.New("Source path does not exist.")
 	}
 
 	if !fileExistsAtPath(dst) {
-		return errors.New("Destination path does not exist")
+		return errors.New("Destination path does not exist.")
+	}
+
+	if !isDirectory(src) {
+		return errors.New("Source path must point to a folder, not to a file.")
+	}
+
+	if !isDirectory(dst) {
+		return errors.New("Destination path must point to a folder, not to a file.")
 	}
 
 	return nil
+}
+
+func isDirectory(path strint) (bool, error) {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return false, err
+	}
+	return fileInfo.IsDir(), err
 }
 
 /* Returns boolean indicating whether a file exists at provided path. */

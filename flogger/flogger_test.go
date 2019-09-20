@@ -25,7 +25,7 @@ func TestLog(t *testing.T) {
 	for i := 0; i < 100000; i++ {
 		txt := strconv.Itoa(i) + "\n"
 
-		err = LogToFile(txt, filePath)
+		err = Log(txt)
 
 		if err != nil {
 			t.Error(err)
