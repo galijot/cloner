@@ -8,28 +8,18 @@ import (
 	"strings"
 
 	"github.com/galijot/cloner/cper"
+	"github.com/galijot/cloner/differ"
 	"github.com/galijot/cloner/flogger"
 )
 
-// File represents a system file (either a folder or an actual file) which is supposed to be cloned.
-type File struct {
-	info     os.FileInfo
-	src, dst string
+func log(s ...interface{}) {
+	fmt.Println(s...)
+	flogger.Log(fmt.Sprintf("%v", s))
 }
 
-// CloneOptions which will configure a Clone
-type CloneOptions interface {
-	IncludeHidden() bool
-}
-
-func log(s string) {
-	fmt.Println(s)
-	flogger.Log(s)
-}
-
-// Clone clones the directory at scrPath to dstPath using provided options,
+// Clone clones the directory at scrPath to dstPath,
 // writes the cloned results into 'cloner.txt' file in the root of the srcPath.
-func Clone(srcPath, dstPath string, options CloneOptions) error {
+func Clone(srcPath, dstPath string) error {
 
 	if err := validatePaths(srcPath, dstPath); err != nil {
 		return err
@@ -41,94 +31,29 @@ func Clone(srcPath, dstPath string, options CloneOptions) error {
 	defer flogger.Resign()
 
 	log("Preparing files...")
-	files, err := Diff(srcPath, dstPath, options)
+	result, err := differ.Diff(srcPath, dstPath)
 	if err != nil {
 		return err
 	}
+	files := result.SrcToDstItems
 
+	totalSize := differ.SizeOfItems(files)
+	fmt.Println(totalSize)
 	totalCount := len(files)
 
 	log(fmt.Sprintf("Cloning %d items.\n", totalCount))
 	for i, file := range files {
 		fmt.Printf("\rOn %d/%d", i+1, totalCount)
 
-		if err = cper.Cp(file.info, file.src, file.dst); err != nil {
+		if err = cper.Cp(file.Info, file.Src, file.Dst); err != nil {
 			return err
 		}
 
-		flogger.Log(strings.TrimLeft(file.src, srcPath))
+		flogger.Log(strings.TrimLeft(file.Src, srcPath))
 	}
 	log("\nCompleted successfully!")
 
 	return err
-}
-
-// Diff returns a difference between src and dst paths, or error,
-// if any occurred while itterating throught directory at src path
-func Diff(src, dst string, options CloneOptions) ([]File, error) {
-	var files []File
-
-	/* Represents last folder that is supposed to be cloned.
-
-	When we find that a folder does not exist in the dst path, we save it for cloning.
-	Then, if that colder contains some files (which is usually the case),
-	we'll check if they exists as well - we're sure they don't exists,
-	because a folder that's holding them does not.
-
-	So, to reduce the number of items, we'll save a path of that folder,
-	and return every time we find a file whose path contains path of that folder.
-	*/
-	var lastNonExistingFolder string
-
-	/* walk through folder at srcPath */
-	err := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-
-		/* happens only once, at fist itteration */
-		if src == path {
-			return nil
-		}
-
-		/* first, read a comment above declaration of lastNonExistingFolder
-
-		here we're simply checking if last cloned folder is saved, and if file's path contains
-		a path to that folder, i.e, if it's in that folder. */
-		if lastNonExistingFolder != "" {
-			if strings.Contains(path, lastNonExistingFolder) {
-				return nil
-			}
-			lastNonExistingFolder = ""
-		}
-
-		if err != nil {
-			return filepath.SkipDir
-		}
-
-		if isFileHidden(info) && !options.IncludeHidden() {
-			return nil
-		}
-
-		// path of the item without src
-		internalPath := strings.Replace(path, src, "", -1)
-
-		dstItemPath := filepath.Join(dst, internalPath)
-		if fileExistsAtPath(dstItemPath) {
-			return nil
-		}
-
-		if info.IsDir() {
-			lastNonExistingFolder = path
-		}
-
-		item := File{info: info, src: path, dst: dstItemPath}
-		files = append(files, item)
-
-		return err
-	})
-
-	if err == nil {
-		return files, nil
-	}
-	return nil, err
 }
 
 // checks if paths are valid, and if they're not returns an error describing the issue.
@@ -174,12 +99,4 @@ func fileExistsAtPath(path string) bool {
 		return true
 	}
 	return false
-}
-
-/*
-Checks if the provided file is hidden.
-Currently only works for unix systems, where hidden files begins with "."
-*/
-func isFileHidden(file os.FileInfo) bool {
-	return strings.HasPrefix(file.Name(), ".")
 }

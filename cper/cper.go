@@ -7,13 +7,12 @@ import (
 	"path"
 )
 
-/* Cp copies a file form src to dst path */
+// Cp copies a file form src to dst path
 func Cp(file os.FileInfo, src, dst string) error {
 	if file.IsDir() {
 		return Dir(src, dst)
-	} else {
-		return File(src, dst)
 	}
+	return File(src, dst)
 }
 
 /*
